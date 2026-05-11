@@ -889,22 +889,36 @@ defmodule Ash.Type do
 
   def init(type, constraints) do
     type = get_type(type)
+    stack = Process.get(:ash_type_init_stack, [])
 
-    if Ash.Type.NewType.new_type?(type) do
-      case type.init(constraints) do
-        {:ok, constraints} ->
-          {:ok, constraints}
-
-        {:error, error} ->
-          {:error, Exception.format(:error, error)}
-      end
+    if type in stack do
+      {:ok, constraints}
     else
-      case validate_constraints(type, constraints) do
-        {:ok, constraints} ->
-          type.init(constraints)
+      Process.put(:ash_type_init_stack, [type | stack])
 
-        {:error, error} ->
-          {:error, Exception.format(:error, error)}
+      try do
+        if Ash.Type.NewType.new_type?(type) do
+          case type.init(constraints) do
+            {:ok, constraints} ->
+              {:ok, constraints}
+
+            {:error, error} ->
+              {:error, Exception.format(:error, error)}
+          end
+        else
+          case validate_constraints(type, constraints) do
+            {:ok, constraints} ->
+              type.init(constraints)
+
+            {:error, error} ->
+              {:error, Exception.format(:error, error)}
+          end
+        end
+      after
+        case stack do
+          [] -> Process.delete(:ash_type_init_stack)
+          _ -> Process.put(:ash_type_init_stack, stack)
+        end
       end
     end
   end
